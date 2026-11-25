@@ -1,15 +1,17 @@
 [package]
 name = "sgr-flight"
-description = "Flight software subsystems (no_std)"
+description = "Flight software equipment drivers and subsystems (no_std)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# Allowed workspace dependencies: sgr-flight-core.
-# Never sgr-protocol: subsystems do not see packet formats.
-# Add `sgr-flight-core.workspace = true` when first needed (Cargo warns about unused dependencies).
+# Allowed workspace dependencies: sgr-flight-core and sgr-protocol.
+# sgr-protocol is for the equipment drivers only (`src/drivers/`), and only its `equipment`
+# module: subsystems do not see message formats. See docs/decisions/0003-pilotes-d-equipements.md.
 [dependencies]
+sgr-flight-core.workspace = true
+sgr-protocol.workspace = true
 
 [lints]
 workspace = true

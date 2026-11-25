@@ -75,6 +75,7 @@ Exécutif cyclique à 10 Hz, une seule boucle, sans threads : acquisition des é
 - Pas de `unwrap()`, `expect()` ni `panic!` : chaque erreur est traitée ou remontée en événement.
 - `sgr-protocol`, `sgr-flight-core` et `sgr-flight` compilent en `no_std`. Seules les crates de plateforme utilisent la bibliothèque standard.
 - Les sous-systèmes ne voient jamais le format des paquets : seul le service TC/TM encode et décode.
+- Dans `sgr-flight`, seuls les pilotes (`src/drivers/`) utilisent `sgr-protocol`, et seulement son module `equipment`.
 - Tout est en Rust. Le C sert uniquement à interfacer un driver sans équivalent Rust : une crate `*-sys` (bindings générés avec `bindgen`, compilation du C avec la crate `cc`) et une crate d'enveloppe qui expose une API sûre.
 - Le code `unsafe` est confiné autant que possible à ces crates, et chaque bloc `unsafe` est justifié par un commentaire `// SAFETY:`.
 

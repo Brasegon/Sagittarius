@@ -34,6 +34,10 @@ version = "0.1.0"
 [[package]]
 name = "sgr-flight"
 version = "0.1.0"
+dependencies = [
+ "sgr-flight-core",
+ "sgr-protocol",
+]
 
 [[package]]
 name = "sgr-flight-core"
