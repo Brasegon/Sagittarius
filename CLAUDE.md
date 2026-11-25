@@ -108,4 +108,4 @@ La CI (`.github/workflows/ci.yml`) rejoue ces vérifications à chaque push et �
 
 ## Avancement
 
-Phase en cours : 0 (mise en place). Feuille de route dans `docs/conception.md`.
+Phase en cours : 1 (squelette de bout en bout). Feuille de route dans `docs/conception.md`.
