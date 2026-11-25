@@ -1,4 +1,4 @@
-# Travail en cours : le pilote du PCDU est écrit, la boucle principale vient ensuite
+# Travail en cours : le thermostat est écrit, le trait de cadence et le cycle viennent ensuite
 
 > **Note temporaire.** Elle sert à reprendre le travail sur une autre machine. Avant de fusionner la branche : supprimer ce fichier et la ligne de `CLAUDE.md` qui y renvoie (section « Avancement »).
 
@@ -17,6 +17,7 @@ Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans
 | Étape 6 : les traits `Clock` et `EquipmentBus`, l'erreur `BusError`, 7 tests | `crates/sgr-flight-core/src/platform.rs` et `tests/platform.rs` |
 | Décision 0003 : la forme des pilotes d'équipements | `docs/decisions/0003-pilotes-d-equipements.md` |
 | Étape 7 : le pilote du PCDU (`read_hk`, `set_switches`) et `DriverError`, 10 tests | `crates/sgr-flight/src/drivers/` et `tests/pcdu_driver.rs` |
+| Étape 8 : le thermostat du réchauffeur de la batterie (`Thermostat`), 11 tests | `crates/sgr-flight/src/thermal.rs` et `tests/thermal.rs` |
 
 Tout est au vert : `cargo test --workspace`, `cargo fmt --all -- --check`, `cargo lint` et `cargo check-nostd`.
 
@@ -32,6 +33,7 @@ Résultat attendu, parmi des lignes à `0 passed` pour les cibles sans tests :
 
 ```
 test result: ok. 10 passed; 0 failed     <- sgr-flight, tests/pcdu_driver.rs
+test result: ok. 11 passed; 0 failed     <- sgr-flight, tests/thermal.rs
 test result: ok. 7 passed; 0 failed      <- sgr-flight-core, tests/platform.rs
 test result: ok. 44 passed; 0 failed     <- sgr-protocol, tests unitaires
 test result: ok. 2 passed; 0 failed      <- sgr-protocol, tests/reference_cycle.rs
@@ -39,13 +41,27 @@ test result: ok. 2 passed; 0 failed      <- sgr-protocol, tests/reference_cycle.
 
 Prérequis : `rustup` (la toolchain épinglée s'installe toute seule) et un compilateur C (`build-essential`). Node n'est pas nécessaire pour l'instant. Si `cargo` est introuvable dans un terminal, lancer `source "$HOME/.cargo/env"`.
 
+## La boucle principale, en trois morceaux
+
+La forme a été discutée et acceptée. Elle sera consignée dans une décision 0004 avec le trait de cadence.
+
+1. **Le thermostat** : fait (étape 8). `Thermostat::update(bat_temp)` à chaque mesure valide, `heater_on()` pour lire la commande. Allumé en dessous de +5,00 °C, éteint au-dessus de +10,00 °C, inchangé entre les deux.
+2. **Le trait de cadence `CycleSync`** : à faire.
+3. **La fonction qui joue un cycle** : à faire.
+
+Pour le thermostat, l'auteur a écrit une première version des tests, que Claude a complétée à sa demande après les avoir éprouvés contre des thermostats cassés exprès. Il a ensuite écrit le code seul, au vert du premier coup.
+
 ## Ensuite
 
-Il reste trois morceaux avant la fin de la base.
+1. **Le trait de cadence `CycleSync`** dans `sgr_flight_core::platform` : `fn wait_tick(&mut self);` et `fn cycle_done(&mut self);`. Le numéro du tick se lit par `Clock`, pour qu'il n'y ait qu'une source.
+2. **La fonction qui joue un cycle**, dans `sgr-flight` : attendre le tick, lire le housekeeping, faire décider le thermostat, envoyer l'état des interrupteurs, signaler la fin du cycle. Règles convenues :
+   - si le PCDU ne répond pas à la lecture, le thermostat garde sa dernière commande et le cycle continue ;
+   - `SET_SWITCHES` est envoyé à chaque cycle, même sans changement ;
+   - `CycleDone` est envoyé même en cas d'erreur, sinon le simulateur attendrait pour toujours ; la fonction renvoie l'erreur à son appelant.
+3. **Le modèle du PCDU dans `sgr-sim`.** Le test `driver_and_pcdu_model_understand_each_other` en contient une ébauche (`PcduModel`).
+4. **Le premier test de bout en bout dans `sgr-e2e`** : le simulateur et le logiciel de vol dans un seul processus. C'est la fin de la base : ensuite, l'auteur conçoit et écrit seul.
 
-1. **La cadence du cycle et la boucle principale.** Rien n'est préparé, la forme est à discuter d'abord : un troisième trait de plateforme (attendre le `Tick`, envoyer le `CycleDone`), et la boucle qui, à chaque cycle, lit le housekeeping du PCDU et commande le réchauffeur selon la température. Questions à trancher : où vit la boucle (`sgr-flight-core` ou `sgr-flight`), quel seuil de température et quelle hystérésis, quoi faire quand le pilote renvoie une erreur.
-2. **Le modèle du PCDU dans `sgr-sim`.** Le test `driver_and_pcdu_model_understand_each_other` en contient une ébauche (`PcduModel`).
-3. **Le premier test de bout en bout dans `sgr-e2e`** : le simulateur et le logiciel de vol dans un seul processus. C'est la fin de la base : ensuite, l'auteur conçoit et écrit seul.
+Écart assumé avec `docs/conception.md` : une seule fonction joue le cycle, sans ordonnanceur, sans trait `Subsystem` ni bus interne. C'est le minimum pour le premier test de bout en bout ; le reste vient en fin de phase 1.
 
 Une amélioration possible du pilote, laissée à l'auteur : `set_switches` donne au bus un buffer de `PcduHk::LEN` octets, alors que la réponse attendue est vide. Un buffer vide (`&mut []`) dirait mieux l'intention.
 
