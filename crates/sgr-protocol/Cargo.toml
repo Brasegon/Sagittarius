@@ -1,0 +1,10 @@
+[package]
+name = "sgr-protocol"
+description = "Message formats shared by the flight software and the simulator (no_std)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

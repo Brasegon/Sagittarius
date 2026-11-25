@@ -1,0 +1,5 @@
+[alias]
+# Clippy on every crate and every target, warnings treated as errors (same as CI).
+lint = "clippy --workspace --all-targets --locked -- -D warnings"
+# Builds the no_std crates for a bare-metal target: fails if anything pulls in std.
+check-nostd = "build --locked --target thumbv7em-none-eabihf -p sgr-protocol -p sgr-flight-core -p sgr-flight"

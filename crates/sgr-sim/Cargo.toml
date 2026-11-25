@@ -1,0 +1,15 @@
+[package]
+name = "sgr-sim"
+description = "Environment simulator: orbit, power, thermal, propulsion and radio channel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Allowed workspace dependencies: sgr-protocol. Never the flight crates:
+# the simulator only knows the sensor / actuator interface.
+# Add `sgr-protocol.workspace = true` when first needed (Cargo warns about unused dependencies).
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"

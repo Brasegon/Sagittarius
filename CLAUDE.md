@@ -86,7 +86,25 @@ Exécutif cyclique à 10 Hz, une seule boucle, sans threads : lecture des capteu
 
 ## Commandes
 
-À compléter au fil du projet (build, tests, lancement des programmes).
+Prérequis : `rustup` (la toolchain épinglée dans `rust-toolchain.toml` s'installe toute seule), un compilateur C pour l'édition de liens (`build-essential`) et Node 26 (`nvm use`).
+
+Rust, depuis la racine :
+
+- `cargo build --workspace` : tout compiler.
+- `cargo test --workspace` : tests unitaires et de bout en bout.
+- `cargo lint` : Clippy avec les règles du logiciel de vol, avertissements bloquants.
+- `cargo check-nostd` : compile les trois crates `no_std` pour une cible sans système (`thumbv7em-none-eabihf`).
+- `cargo fmt --all` : formater.
+- `cargo run -p sgr-sim` et `cargo run -p sgr-flight-linux` : lancer le simulateur et le logiciel de vol.
+
+`lint` et `check-nostd` sont des alias définis dans `.cargo/config.toml`.
+
+Segment sol, après `npm install` dans le dossier concerné :
+
+- `ground/gateway` : `npm run dev`, `npm run typecheck`, `npm test`. Node exécute directement les fichiers `.ts`, sans étape de build.
+- `ground/web` : `npm run dev`, `npm run lint`, `npm run build`.
+
+La CI (`.github/workflows/ci.yml`) rejoue ces vérifications à chaque push et à chaque pull request.
 
 ## Avancement
 

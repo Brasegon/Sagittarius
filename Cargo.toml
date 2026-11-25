@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+sgr-protocol = { path = "crates/sgr-protocol" }
+sgr-flight-core = { path = "crates/sgr-flight-core" }
+sgr-flight = { path = "crates/sgr-flight" }
+sgr-sim = { path = "crates/sgr-sim" }
+
+# Flight software rules (see CLAUDE.md). A crate opts in with `[lints] workspace = true`.
+# The simulator and the end-to-end tests do not: they run on the ground.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# The crates are still empty, so the entries of [workspace.dependencies] are not used yet.
+# Remove this line once every crate is wired to the ones it needs.
+[workspace.lints.cargo]
+unused_workspace_dependencies = "allow"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"

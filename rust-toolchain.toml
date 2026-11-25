@@ -1,0 +1,7 @@
+# Pinned so that local builds and CI use the same compiler and the same Clippy lints.
+# To upgrade: change the version, then run `cargo lint` and fix what the new Clippy reports.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+# Cortex-M4F / M7F (most STM32 Nucleo boards). Only used to prove the no_std crates build without std.
+targets = ["thumbv7em-none-eabihf"]
