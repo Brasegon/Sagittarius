@@ -7,7 +7,7 @@
 //! A file in `tests/` is compiled as a separate crate, like `sgr-flight-linux`: it sees only
 //! what is `pub`.
 
-use sgr_flight_core::platform::{BusError, Clock, EquipmentBus};
+use sgr_flight_core::platform::{BusError, Clock, CycleSync, EquipmentBus};
 
 // --- Clock ---
 
@@ -187,4 +187,66 @@ fn bus_error_is_a_plain_value() {
     assert_eq!(error, copy);
     assert_ne!(BusError::NoResponse, BusError::ResponseTooLong);
     assert_eq!(format!("{error:?}"), "NoResponse");
+}
+
+// --- CycleSync ---
+
+/// A platform reduced to its cadence, with its clock: each wait starts the next tick, as the
+/// `Tick` frame of the simulator will.
+struct FakeCadence {
+    current: u32,
+    cycles_done: u32,
+}
+
+impl CycleSync for FakeCadence {
+    fn wait_tick(&mut self) {
+        self.current += 1;
+    }
+
+    fn cycle_done(&mut self) {
+        self.cycles_done += 1;
+    }
+}
+
+impl Clock for FakeCadence {
+    fn tick(&self) -> u32 {
+        self.current
+    }
+}
+
+/// A cycle with nothing in it. `P: CycleSync + Clock` asks for a type that implements both
+/// traits: the same platform gives the cadence and the time.
+fn empty_cycle<P: CycleSync + Clock>(platform: &mut P) -> u32 {
+    platform.wait_tick();
+    let tick = platform.tick();
+    platform.cycle_done();
+    tick
+}
+
+#[test]
+fn cycle_sync_frames_each_cycle() {
+    let mut platform = FakeCadence {
+        current: 0,
+        cycles_done: 0,
+    };
+
+    platform.wait_tick();
+    platform.cycle_done();
+    platform.wait_tick();
+    platform.cycle_done();
+
+    assert_eq!(platform.cycles_done, 2);
+}
+
+#[test]
+fn tick_of_a_cycle_is_read_through_the_clock() {
+    // `wait_tick` returns nothing: the tick has a single source, the clock.
+    let mut platform = FakeCadence {
+        current: 41,
+        cycles_done: 0,
+    };
+
+    assert_eq!(empty_cycle(&mut platform), 42);
+    assert_eq!(empty_cycle(&mut platform), 43);
+    assert_eq!(platform.cycles_done, 2);
 }
