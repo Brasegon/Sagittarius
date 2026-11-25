@@ -110,3 +110,5 @@ La CI (`.github/workflows/ci.yml`) rejoue ces vérifications à chaque push et �
 ## Avancement
 
 Phase en cours : 1 (squelette de bout en bout). Feuille de route dans `docs/conception.md`.
+
+Travail en cours sur cette branche : lis `docs/en-cours.md` avant de reprendre. Note temporaire, à supprimer avec cette ligne avant de fusionner.
