@@ -2,9 +2,37 @@
 //!
 //! Format: `docs/icd.md`, section "PCDU". Multi-byte fields are big-endian.
 
+use crate::lockstep::Payload;
+
 pub const PCDU_ADDRESS: u8 = 0x10; // Address of the PCDU on the equipment bus
 
+const GET_HK: u8 = 0x01; // Get PCDU data
+const SET_SWITCHES: u8 = 0x02; // Set switches state
+
 pub const SWITCH_BAT_HEATER: u8 = 1 << 0; // Battery heater switch
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PcduRequest {
+    GetHk,
+    SetSwitches { switches: u8 },
+}
+
+impl PcduRequest {
+    pub fn encode(&self) -> Payload {
+        match *self {
+            Self::GetHk => Payload::from_array([GET_HK]),
+            Self::SetSwitches { switches } => Payload::from_array([SET_SWITCHES, switches]),
+        }
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        match *bytes {
+            [GET_HK] => Some(Self::GetHk),
+            [SET_SWITCHES, value] => Some(Self::SetSwitches { switches: value }),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcduHk {

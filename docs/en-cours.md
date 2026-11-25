@@ -1,19 +1,21 @@
-# Travail en cours : étape 4, le housekeeping du PCDU
+# Travail en cours : le protocole du bus est terminé, les traits de plateforme viennent ensuite
 
 > **Note temporaire.** Elle sert à reprendre le travail sur une autre machine. Avant de fusionner la branche : supprimer ce fichier et la ligne de `CLAUDE.md` qui y renvoie (section « Avancement »).
 
 ## Où on en est
 
-Branche `claude/icd-v0-lockstep`. Phase 1, premier morceau : le protocole entre le simulateur et le logiciel de vol.
+Branche `claude/icd-v0-lockstep`. Phase 1, premier morceau : le protocole entre le simulateur et le logiciel de vol. Ce morceau est terminé côté `sgr-protocol`.
 
 | Fait | Où |
 | ---- | -- |
 | ICD v0.2 : dialogue par bus d'équipements, premier équipement le PCDU | `docs/icd.md` |
 | Note de décision : pourquoi le dialogue par bus | `docs/decisions/0001-dialogue-par-bus-d-equipements.md` |
 | Les quatre trames du bus, 32 tests | `crates/sgr-protocol/src/lockstep.rs` |
-| Rangement et 6 tests pour le PCDU | `crates/sgr-protocol/src/equipment/` |
+| Étape 4 : le housekeeping du PCDU (`PcduHk`), 6 tests | `crates/sgr-protocol/src/equipment/pcdu.rs` |
+| Étape 5 : les demandes au PCDU (`PcduRequest`), 6 tests | `crates/sgr-protocol/src/equipment/pcdu.rs` |
+| Le cycle de référence de l'ICD rejoué par l'API publique, 2 tests | `crates/sgr-protocol/tests/reference_cycle.rs` |
 
-**Le dernier commit est volontairement rouge** : les tests du PCDU sont écrits, pas encore le code. `cargo test -p sgr-protocol` ne compile donc pas (21 erreurs sur `PcduHk`, `PCDU_ADDRESS` et `SWITCH_BAT_HEATER`), et la CI échoue sur ce commit. C'est l'étape 4 qui le remet au vert.
+Tout est au vert : `cargo test -p sgr-protocol`, `cargo fmt --all -- --check`, `cargo lint` et `cargo check-nostd`.
 
 ## Reprendre sur une autre machine
 
@@ -23,64 +25,40 @@ git switch claude/icd-v0-lockstep
 cargo test -p sgr-protocol
 ```
 
-Prérequis : `rustup` (la toolchain épinglée s'installe toute seule) et un compilateur C (`build-essential`). Node n'est pas nécessaire pour cette étape.
-
-## Étape 4 : ce qu'il faut écrire
-
-Dans `crates/sgr-protocol/src/equipment/pcdu.rs`, entre l'en-tête `//!` et la ligne `mod tests;` :
-
-1. **Deux constantes publiques** : `PCDU_ADDRESS`, qui vaut `0x10`, et `SWITCH_BAT_HEATER`, le bit 0 (`1 << 0`).
-2. **La struct `PcduHk`** : `bat_v` en `u16`, `bat_temp` en `i16`, `switches` en `u8`. Taille fixe, donc `Copy` dans le `derive`.
-3. **Son `impl`** : `LEN` à 5, puis :
-
-```rust
-pub fn encode(&self) -> [u8; Self::LEN]
-pub fn decode(bytes: &[u8]) -> Option<Self>
-```
-
-Positions des champs, d'après l'ICD :
-
-| Décalage | Champ      | Contenu                              |
-| -------- | ---------- | ------------------------------------ |
-| 0 et 1   | `bat_v`    | tension de la batterie, en mV        |
-| 2 et 3   | `bat_temp` | température, en centièmes de °C      |
-| 4        | `switches` | état réel des interrupteurs          |
-
-Il n'y a pas d'en-tête ici : c'est le contenu du `payload`, que les trames du bus transportent sans le lire. Le bus joue le rôle d'HTTP, le PCDU celui du JSON dans le corps du message.
-
-La seule nouveauté est `Option` à la place de `Result`. `decode` ne peut échouer que d'une façon, une longueur différente de 5, donc pas besoin d'un `enum` d'erreurs :
-
-- `Some(Self { ... })` quand ça marche, là où on écrivait `Ok(Self { ... })` ;
-- `None` quand la longueur est fausse, là où on écrivait `Err(...)`.
-
-Modèle à suivre : `Tick::encode` et `Tick::decode` dans `lockstep.rs`, sans l'en-tête.
-
-### Résultat attendu
+Résultat attendu, une ligne par cible :
 
 ```
-test result: ok. 38 passed; 0 failed
+test result: ok. 44 passed; 0 failed     <- tests unitaires
+test result: ok. 2 passed; 0 failed      <- tests/reference_cycle.rs
 ```
 
-Pour ne lancer que les tests du PCDU (6 tests) :
-
-```bash
-cargo test -p sgr-protocol pcdu
-```
-
-Puis `cargo fmt --all`, `cargo lint` et `cargo check-nostd`, qui doivent passer tous les trois.
-
-## Rappels
-
-- **Le PCDU n'est pas la batterie.** C'est le boîtier électrique auquel elle est branchée : il la mesure, et il alimente chaque équipement par un interrupteur. Pour avoir des nouvelles de la batterie, le logiciel de vol interroge le PCDU.
-- **Savoir si le réchauffeur est allumé** : `(hk.switches & SWITCH_BAT_HEATER) != 0`.
-- **Gros-boutiste partout** : `to_be_bytes()` dans un sens, `u16::from_be_bytes([a, b])` dans l'autre.
+Prérequis : `rustup` (la toolchain épinglée s'installe toute seule) et un compilateur C (`build-essential`). Node n'est pas nécessaire pour l'instant. Si `cargo` est introuvable dans un terminal, lancer `source "$HOME/.cargo/env"`.
 
 ## Ensuite
 
-1. **Étape 5** : les deux commandes du PCDU, `GET_HK` et `SET_SWITCHES`, dans un `enum PcduRequest`. Les tests sont à préparer.
-2. Les traits de plateforme `Clock` et `EquipmentBus` dans `sgr-flight-core`.
-3. Le premier pilote, celui du PCDU, dans `sgr-flight`, et une boucle qui lit la température et commande le réchauffeur.
-4. Le modèle du PCDU dans `sgr-sim`, puis le premier test de bout en bout dans `sgr-e2e`.
+1. **Les traits de plateforme `Clock` et `EquipmentBus`** dans `sgr-flight-core`. Rien n'est préparé : la forme des traits est à discuter d'abord (ce que renvoie un échange sur le bus, comment un équipement muet est signalé).
+2. Le premier pilote, celui du PCDU, dans `sgr-flight`, et une boucle qui lit la température et commande le réchauffeur.
+3. Le modèle du PCDU dans `sgr-sim`, puis le premier test de bout en bout dans `sgr-e2e`.
+
+## Rappels
+
+- **Le PCDU n'est pas la batterie.** C'est le boîtier électrique auquel elle est branchée : il la mesure, et il alimente chaque équipement par un interrupteur.
+- **Un échange avec le PCDU** : le pilote envoie un `PcduRequest` encodé dans le `payload` d'un `BusRequest`. `GET_HK` reçoit un `PcduHk`, `SET_SWITCHES` une réponse vide.
+- **`SET_SWITCHES` est une commande d'état** : elle donne l'état voulu de tous les interrupteurs à la fois. Relire `switches` dans le housekeeping permet de vérifier qu'elle a été appliquée.
+- **Savoir si le réchauffeur est allumé** : `(hk.switches & SWITCH_BAT_HEATER) != 0`.
+
+## Notions Rust déjà vues
+
+Pour doser les explications : celles-ci sont acquises, les autres sont à présenter depuis zéro.
+
+- `struct`, `impl`, constantes associées (`Self::LEN`), `derive`.
+- `Result` et `Option`, et comment choisir entre les deux ; l'opérateur `?`.
+- Les modules et `use` ; la visibilité (`pub` sur un type, sur chaque champ, sur une constante associée).
+- Les `enum` simples et les `enum` qui portent des données ; `match`, y compris sur une tranche d'octets (`[CODE, value]`).
+- Les tableaux de taille fixe, `try_into`, `to_be_bytes` et `from_be_bytes`.
+- `heapless::Vec` à travers l'alias `Payload` : `from_array`, `from_slice`.
+
+Pas encore vus : les traits, qui sont la notion nouvelle de l'étape suivante.
 
 ## Méthode de travail suivie jusqu'ici
 
@@ -88,6 +66,8 @@ Pour une session Claude qui reprendrait sans l'historique de la conversation :
 
 - L'auteur du projet débute en Rust (voir `CLAUDE.md`) : une notion à la fois, expliquée depuis zéro et rapprochée de TypeScript ou de JavaScript.
 - Claude prépare les tests de chaque étape **avant** le code, à partir des trames de référence de l'ICD. Il les valide hors du dépôt contre une implémentation jetable et contre quelques versions cassées exprès, puis ne laisse dans le dépôt que les tests.
+- Tout nouveau type public est aussi utilisé dans `crates/sgr-protocol/tests/reference_cycle.rs`, pour qu'un `pub` oublié casse la compilation.
 - L'auteur écrit le code. Chaque étape se termine sur un résultat exact à obtenir (`N passed; 0 failed`).
 - Claude relit en lançant les tests, `cargo lint`, `cargo fmt` et `cargo check-nostd`, et rattache chaque remarque au message du compilateur correspondant.
 - Pour une notion vraiment nouvelle, un exemple complet d'abord, puis l'auteur écrit le cas jumeau seul.
+- L'auteur commite lui-même.

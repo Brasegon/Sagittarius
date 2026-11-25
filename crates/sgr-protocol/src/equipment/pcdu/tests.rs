@@ -84,3 +84,80 @@ fn hk_tells_whether_the_heater_is_on() {
     let closed = PcduHk::decode(&HK_REF_B).unwrap();
     assert_ne!(closed.switches & SWITCH_BAT_HEATER, 0);
 }
+
+// --- Requests (GET_HK and SET_SWITCHES) ---
+
+// Request payloads, copied from the `BusRequest` reference frames of docs/icd.md
+// (the bytes that follow the 6-byte header and the address).
+
+/// `GET_HK`
+const GET_HK_REF: [u8; 1] = [0x01];
+/// `SET_SWITCHES`, `BAT_HEATER` closed
+const SET_SWITCHES_REF: [u8; 2] = [0x02, 0x01];
+
+/// The request that closes the heater switch.
+const HEATER_ON: PcduRequest = PcduRequest::SetSwitches {
+    switches: SWITCH_BAT_HEATER,
+};
+
+#[test]
+fn request_encodes_reference_payloads() {
+    assert_eq!(&PcduRequest::GetHk.encode()[..], &GET_HK_REF[..]);
+    assert_eq!(&HEATER_ON.encode()[..], &SET_SWITCHES_REF[..]);
+}
+
+#[test]
+fn request_decodes_reference_payloads() {
+    assert_eq!(PcduRequest::decode(&GET_HK_REF), Some(PcduRequest::GetHk));
+    assert_eq!(PcduRequest::decode(&SET_SWITCHES_REF), Some(HEATER_ON));
+}
+
+#[test]
+fn request_travels_in_a_bus_frame() {
+    // `encode` returns a `Payload`, ready to be carried by a `BusRequest`. The result is the
+    // fourth reference frame of the ICD: tick 1, to the PCDU, SET_SWITCHES, BAT_HEATER closed.
+    let frame = crate::lockstep::BusRequest {
+        tick: 1,
+        address: PCDU_ADDRESS,
+        payload: HEATER_ON.encode(),
+    };
+    assert_eq!(
+        &frame.encode()[..],
+        &[0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x10, 0x02, 0x01][..]
+    );
+}
+
+#[test]
+fn request_carries_every_switches_value() {
+    // SET_SWITCHES is a state command: one byte gives every switch at once. The codec carries
+    // it untouched: the ICD says that reserved bits are ignored on reception, not refused.
+    for switches in 0..=u8::MAX {
+        let request = PcduRequest::SetSwitches { switches };
+        let bytes = request.encode();
+        assert_eq!(&bytes[..], &[0x02, switches][..]);
+        assert_eq!(PcduRequest::decode(&bytes), Some(request));
+    }
+}
+
+#[test]
+fn request_rejects_unknown_code() {
+    // 0x01 and 0x02 are the only commands of the ICD. Any other code is refused, whether it
+    // comes alone or with an argument.
+    for code in 0..=u8::MAX {
+        if code == 0x01 || code == 0x02 {
+            continue;
+        }
+        assert_eq!(PcduRequest::decode(&[code]), None);
+        assert_eq!(PcduRequest::decode(&[code, 0x01]), None);
+    }
+}
+
+#[test]
+fn request_rejects_wrong_length() {
+    assert_eq!(PcduRequest::decode(&[]), None);
+    // GET_HK takes no argument.
+    assert_eq!(PcduRequest::decode(&[0x01, 0x00]), None);
+    // SET_SWITCHES takes exactly one.
+    assert_eq!(PcduRequest::decode(&[0x02]), None);
+    assert_eq!(PcduRequest::decode(&[0x02, 0x01, 0x00]), None);
+}
