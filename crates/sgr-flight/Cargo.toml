@@ -1,0 +1,15 @@
+[package]
+name = "sgr-flight"
+description = "Flight software subsystems (no_std)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Allowed workspace dependencies: sgr-flight-core.
+# Never sgr-protocol: subsystems do not see packet formats.
+# Add `sgr-flight-core.workspace = true` when first needed (Cargo warns about unused dependencies).
+[dependencies]
+
+[lints]
+workspace = true

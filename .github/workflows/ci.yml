@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (flight software and simulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain, components and targets pinned in rust-toolchain.toml.
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (flight rules, no unwrap / expect / panic / unsafe)
+        run: cargo lint
+      - name: no_std build for a bare-metal target
+        run: cargo check-nostd
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  gateway:
+    name: Ground gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ground/gateway
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ground/gateway/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  web:
+    name: Ground web UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ground/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ground/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
