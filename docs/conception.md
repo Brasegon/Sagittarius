@@ -16,9 +16,9 @@ Scénario LEOP :
 
 ## Simulateur (`sgr-sim`)
 
-Le « monde » autour du satellite, canal radio compris. Il ne connaît du logiciel de vol que l'interface capteurs/actionneurs, et relaie les paquets radio sans les décoder.
+Le « monde » autour du satellite, équipements et canal radio compris. Il ne connaît du logiciel de vol que le bus d'équipements, et relaie les paquets radio sans les décoder.
 
-- **Lockstep** : le simulateur donne le tick. À chaque cycle, il envoie les mesures, attend les commandes d'actionneurs, puis avance d'un pas. Le temps bord vient du tick, jamais de l'horloge de la machine. Les tests sont reproductibles et peuvent tourner plus vite que le temps réel. Un mode temps réel sert aux démos.
+- **Lockstep** : le simulateur donne le tick. À chaque cycle, il annonce le tick, répond aux demandes que le logiciel de vol adresse aux équipements, puis avance d'un pas quand celui-ci signale la fin de son cycle (voir `docs/decisions/0001-dialogue-par-bus-d-equipements.md`). Le temps bord vient du tick, jamais de l'horloge de la machine. Les tests sont reproductibles et peuvent tourner plus vite que le temps réel. Un mode temps réel sert aux démos.
 - **Liaison radio** : le simulateur joue le canal RF entre la passerelle et le logiciel de vol. Il relaie les paquets pendant les fenêtres de visibilité, les jette en dehors, et remet chaque TC au logiciel de vol sur un tick précis, ce qui garde les tests reproductibles. Les simulateurs opérationnels font de même : le centre de contrôle s'y connecte comme à une station sol.
 - **Bibliothèque et binaire** : les tests de bout en bout exécutent le simulateur et le logiciel de vol dans un seul processus, sans sockets. Le binaire sert aux démos, en UDP.
 - **Orbite** : intégration numérique (deux corps, puis J2 et traînée), avec application des poussées. SGP4 ne gère pas les manœuvres, il ne sert qu'à initialiser depuis un TLE réel si besoin. Calcul des éclipses et des fenêtres de visibilité de la station sol.
@@ -26,14 +26,14 @@ Le « monde » autour du satellite, canal radio compris. Il ne connaît du logic
 - **Thermique** : modèle simple par nœuds (réservoir, lignes, lit catalytique, batterie, électronique) et réchauffeurs.
 - **Propulsion** : voir la section dédiée.
 - **Attitude** : parfaite au début (le satellite pointe où on le lui demande), modèle simplifié ensuite.
-- **Capteurs** : mesures bruitées, pannes possibles. L'inventaire des capteurs et des actionneurs est fixé dans l'ICD.
+- **Équipements** : un modèle par équipement (le PCDU d'abord), que le logiciel de vol interroge sur un bus simulé. Mesures bruitées, pannes possibles, dont l'absence de réponse. L'inventaire des équipements, des capteurs et des actionneurs est fixé dans l'ICD.
 - **Injection de pannes** : pilotée depuis l'interface par le canal « banc de test », ou scriptée dans un scénario (panne à un instant donné) pour les tests reproductibles.
 
 ## Logiciel de vol
 
 ### Couches
 
-1. **Plateforme** (traits dans `sgr-flight-core`, implémentation dans `sgr-flight-linux`) : `Clock`, `GroundLink`, `SensorBus`… C'est l'équivalent de l'OSAL et du PSP de cFS, et la seule partie à réécrire pour la STM32. `Clock` fournit le temps bord : en lockstep il avance avec le tick du simulateur, sur cible avec un timer matériel.
+1. **Plateforme** (traits dans `sgr-flight-core`, implémentation dans `sgr-flight-linux`) : `Clock`, `GroundLink`, `EquipmentBus`… C'est l'équivalent de l'OSAL et du PSP de cFS, et la seule partie à réécrire pour la STM32. `Clock` fournit le temps bord : en lockstep il avance avec le tick du simulateur, sur cible avec un timer matériel.
 2. **Services du cœur** (`sgr-flight-core`) :
    - **Ordonnanceur** : exécutif cyclique à 10 Hz, cadences lentes par diviseurs.
    - **Bus interne** : files à capacité fixe (`heapless`), seul moyen d'échange entre sous-systèmes.
@@ -41,7 +41,8 @@ Le « monde » autour du satellite, canal radio compris. Il ne connaît du logic
    - **Événements** : journal horodaté avec niveaux de gravité.
    - **TC/TM** : décodage, validation, aiguillage et acquittement des TC ; encodage de la télémesure ; file des commandes temporisées.
    - **Stockage de la télémesure** : tampon circulaire de taille fixe qui conserve le housekeeping et les événements produits hors visibilité, vidé sur TC pendant un passage (l'équivalent du service 15 du PUS). Le logiciel de vol ne sait pas s'il est en visibilité : il émet la télémesure en continu et c'est le sol qui demande le vidage. Simplification : un vrai satellite n'allume son émetteur que pendant les passages.
-3. **Sous-systèmes** (`sgr-flight`) : énergie, thermique, propulsion, attitude, modes et FDIR. Les modes et le FDIR implémentent le même trait que les autres ; ils sont simplement appelés en dernier.
+3. **Pilotes d'équipements** (`sgr-flight`) : un pilote par équipement (le PCDU d'abord). Il dialogue avec son équipement par le trait `EquipmentBus`, traduit les octets en mesures et signale un équipement qui ne répond plus. Seuls les pilotes parlent au bus d'équipements, à ne pas confondre avec le bus interne des services du cœur.
+4. **Sous-systèmes** (`sgr-flight`) : énergie, thermique, propulsion, attitude, modes et FDIR. Les modes et le FDIR implémentent le même trait que les autres ; ils sont simplement appelés en dernier.
 
 ### Interface des sous-systèmes
 
@@ -64,11 +65,11 @@ Une `Command` porte son identifiant de requête, opaque pour le sous-système. U
 
 ### Un cycle (100 ms)
 
-1. Lecture des capteurs via la plateforme.
+1. Acquisition : les pilotes interrogent les équipements.
 2. Traitement des TC reçues et des commandes temporisées arrivées à échéance.
 3. `step()` de chaque sous-système, dans un ordre fixe.
 4. `step()` des modes et du FDIR, toujours en dernier (repli en SAFE si nécessaire).
-5. Commandes aux actionneurs, housekeeping, événements.
+5. Commandes aux équipements, housekeeping, événements.
 
 La durée de chaque cycle est mesurée avec l'horloge de la machine, distincte du temps bord : un dépassement émet un événement. Cette détection est désactivée quand le simulateur tourne en accéléré, sinon la charge du PC rendrait les tests non reproductibles.
 
@@ -138,6 +139,7 @@ Propulsion chimique monergol (hydrazine), réservoir en blowdown.
 
 - **Sémantique du bus** : un message publié au cycle N est-il lu au cycle N (si le destinataire passe après l'émetteur) ou toujours au cycle N+1 ? La seconde option ne dépend pas de l'ordre d'appel, mais ajoute 100 ms partout. En particulier, le FDIR passe en dernier : sa coupure d'un allumage n'atteint la propulsion qu'au cycle suivant, sauf si l'étape 5 applique ses inhibitions aux commandes d'actionneurs du cycle en cours.
 - **Emplacement de `Command` et des messages du bus** : le service TC/TM décode et aiguille les TC, donc il connaît les commandes de chaque sous-système, alors que `sgr-flight-core` ne doit pas dépendre de `sgr-flight`. Soit le cœur est générique sur le type de message (`Bus<M>`, `Subsystem<M>`), soit ces types sont définis dans le cœur ou dans `sgr-protocol`.
+- **Des pilotes aux sous-systèmes** : comment une mesure acquise par un pilote parvient-elle aux sous-systèmes ? Soit le pilote la publie sur le bus interne, soit elle est rangée dans une table de données que le `Context` donne à lire. La même question se pose en sens inverse pour les commandes aux équipements.
 
 ## Feuille de route
 

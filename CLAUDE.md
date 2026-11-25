@@ -26,11 +26,11 @@ ground/web (React)
 ground/gateway (Node + TypeScript)
      │  UDP : liaison radio (TM/TC) et, sur un port distinct, canal « banc de test »
 sgr-sim (Rust) : orbite, énergie, thermique, propulsion, canal radio
-     │  UDP en lockstep : mesures capteurs et TC / commandes actionneurs et TM
+     │  UDP en lockstep : bus d'équipements simulé (demandes et réponses), TC et TM
 sgr-flight-linux (Rust) : logiciel de vol
 ```
 
-- Le simulateur donne le tick : à chaque cycle, il envoie les mesures, le logiciel de vol répond avec ses commandes d'actionneurs, puis le monde avance d'un pas. Le temps bord vient du tick, jamais de l'horloge de la machine. Un mode temps réel sert aux démos.
+- Le simulateur donne le tick : à chaque cycle, il annonce le tick, le logiciel de vol interroge et commande les équipements simulés par des échanges demande-réponse (il est le maître du bus), signale la fin de son cycle, puis le monde avance d'un pas. Le temps bord vient du tick, jamais de l'horloge de la machine. Un mode temps réel sert aux démos.
 - La liaison radio passe par le simulateur, qui joue le canal RF : il relaie les paquets sans les décoder, les jette hors des fenêtres de visibilité et remet les TC au logiciel de vol sur un tick précis.
 - L'injection de pannes passe de `ground/web` à `sgr-sim` par un canal « banc de test » séparé, relayé par la passerelle sur une route WebSocket et un port UDP distincts, jamais par la liaison radio.
 - Ni cFS ni PUS : framework et protocole maison, inspirés des deux.
@@ -48,7 +48,7 @@ docs/
 crates/
   sgr-protocol/            # formats des messages (no_std), partagés vol / sim
   sgr-flight-core/         # services du cœur et traits plateforme (no_std)
-  sgr-flight/              # sous-systèmes (no_std)
+  sgr-flight/              # pilotes d'équipements et sous-systèmes (no_std)
   sgr-flight-linux/        # plateforme Linux et binaire du logiciel de vol
   sgr-sim/                 # simulateur d'environnement (bibliothèque et binaire)
   sgr-e2e/                 # tests de bout en bout : sim + vol dans un seul processus
@@ -60,13 +60,14 @@ ground/
 
 ## Logiciel de vol
 
-Trois couches, chacune ne dépend que de celle du dessous :
+Quatre couches, chacune ne dépend que de celles du dessous :
 
-1. **Plateforme** : traits définis dans `sgr-flight-core` (`Clock`, `GroundLink`, `SensorBus`…), implémentés dans `sgr-flight-linux`, plus tard dans un `sgr-flight-stm32`.
+1. **Plateforme** : traits définis dans `sgr-flight-core` (`Clock`, `GroundLink`, `EquipmentBus`…), implémentés dans `sgr-flight-linux`, plus tard dans un `sgr-flight-stm32`.
 2. **Services du cœur** (`sgr-flight-core`) : ordonnanceur cyclique, bus interne, paramètres, événements, service TC/TM, stockage de la télémesure.
-3. **Sous-systèmes** (`sgr-flight`) : énergie, thermique, propulsion, attitude, modes et FDIR. Tous implémentent le trait `Subsystem` (`step`, `handle`, `housekeeping`) et ne communiquent que par le bus interne, jamais directement.
+3. **Pilotes d'équipements** (`sgr-flight`) : un par équipement (PCDU…). Chacun dialogue avec son équipement par le trait `EquipmentBus` et signale un équipement qui ne répond plus. Seuls les pilotes parlent au bus d'équipements, à ne pas confondre avec le bus interne.
+4. **Sous-systèmes** (`sgr-flight`) : énergie, thermique, propulsion, attitude, modes et FDIR. Tous implémentent le trait `Subsystem` (`step`, `handle`, `housekeeping`) et ne communiquent que par le bus interne, jamais directement.
 
-Exécutif cyclique à 10 Hz, une seule boucle, sans threads : lecture des capteurs → traitement des TC → `step()` des sous-systèmes dans un ordre fixe, modes et FDIR en dernier → actionneurs et télémesure. Les cadences lentes passent par des diviseurs (housekeeping à 1 Hz = tous les 10 cycles). Un dépassement de cycle émet un événement, sauf quand le simulateur tourne en accéléré.
+Exécutif cyclique à 10 Hz, une seule boucle, sans threads : acquisition des équipements par les pilotes → traitement des TC → `step()` des sous-systèmes dans un ordre fixe, modes et FDIR en dernier → commandes aux équipements et télémesure. Les cadences lentes passent par des diviseurs (housekeeping à 1 Hz = tous les 10 cycles). Un dépassement de cycle émet un événement, sauf quand le simulateur tourne en accéléré.
 
 ## Règles pour le logiciel de vol
 
