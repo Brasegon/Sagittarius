@@ -14,6 +14,9 @@ sgr-flight-core = { path = "crates/sgr-flight-core" }
 sgr-flight = { path = "crates/sgr-flight" }
 sgr-sim = { path = "crates/sgr-sim" }
 
+# Fixed-capacity collections: no heap allocation, see the flight software rules in CLAUDE.md.
+heapless = "0.9"
+
 # Flight software rules (see CLAUDE.md). A crate opts in with `[lints] workspace = true`.
 # The simulator and the end-to-end tests do not: they run on the ground.
 [workspace.lints.rust]
