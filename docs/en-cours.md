@@ -4,7 +4,9 @@
 
 ## Où on en est
 
-Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol sait jouer un cycle complet face à une fausse plateforme. Le simulateur a son squelette et ses tests : il reste à l'écrire, puis viendra le premier test de bout en bout.
+Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol sait jouer un cycle complet face à une fausse plateforme. Le simulateur a son monde et son modèle du PCDU : il reste à écrire `Sim`, qui les assemble, puis viendra le premier test de bout en bout.
+
+La vue d'ensemble du projet est dans `docs/guide.md`. Cette note ne couvre que l'étape en cours.
 
 | Fait | Où |
 | ---- | -- |
@@ -25,8 +27,13 @@ Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans
 | Décision 0005 : la forme du simulateur minimal | `docs/decisions/0005-simulateur-minimal.md` |
 | Squelette de `sgr-sim` : modules déclarés, en-têtes écrits, dépendance à `sgr-protocol` | `crates/sgr-sim/` |
 | Tests de l'étape 10 : 12 tests pour le monde, 10 pour le PCDU, 13 pour le simulateur | `crates/sgr-sim/tests/` |
+| Étape 10a : le monde (`World`), 12 tests au vert | `crates/sgr-sim/src/world.rs` |
+| Étape 10b : le modèle du PCDU (`Pcdu`), 10 tests au vert | `crates/sgr-sim/src/equipment/pcdu.rs` |
+| Le guide du projet | `docs/guide.md` |
 
-**Les tests de l'étape 10 sont écrits, pas encore le code.** `cargo test --workspace` et `cargo lint` ne compilent donc pas : il manque `World`, `Pcdu` et `Sim`. Les autres crates restent au vert, à vérifier une par une (`cargo test -p sgr-flight`). Si ces tests sont commités avant le code, ce commit est rouge et la CI échoue dessus : c'est voulu.
+**Il reste le morceau 10c, et une remarque de Clippy sur 10b.** `cargo test --workspace` et `cargo lint` ne compilent pas tant que `Sim` n'est pas écrit : ses 13 tests l'attendent. Les autres crates restent au vert, à vérifier une par une (`cargo test -p sgr-flight`). Un commit dans cet état est rouge et la CI échoue dessus : c'est voulu.
+
+À corriger dans `Pcdu::handle` : Clippy signale `let_and_return`. Le résultat du `match` est rangé dans `decode`, puis renvoyé à la ligne suivante. Il suffit de supprimer `let decode = `, le `;` après l'accolade fermante du `match`, et la ligne `decode` : le `match` devient la dernière expression de la fonction.
 
 ## Reprendre sur une autre machine
 
@@ -107,8 +114,6 @@ test result: ok. 12 passed; 0 failed     <- tests/world.rs
 
 Puis `cargo fmt --all`, `cargo lint` et `cargo check-nostd`, qui doivent passer tous les trois. À vérifier avant de demander la relecture.
 
-Un avertissement attendu en chemin : tant que `pcdu.rs` n'importe pas `sgr_protocol`, Cargo affiche `warning: unused dependency sgr-protocol`. Il disparaît avec le morceau 10b.
-
 ## Ensuite
 
 **Étape 11 : le premier test de bout en bout dans `sgr-e2e`**, le simulateur et le logiciel de vol dans un seul processus. L'auteur y écrira son premier `impl Trait for Type`, pour brancher la plateforme sur le simulateur. C'est la fin de la base : ensuite, il conçoit et écrit seul.
@@ -148,7 +153,9 @@ Pour doser les explications : celles-ci sont acquises, les autres sont à prése
 - Deux traits dans une borne (`P: A + B`) ; `pub use` ; `if let`, que l'auteur a trouvé seul.
 - Importer un module (`use a::b;`, puis `b::X`) ou ses noms (`use a::b::{X, Y};`), l'équivalent de `import * as b` et de `import { X, Y }`.
 
-En cours avec l'étape 10 : `f64`, la conversion avec `as`, une struct qui en contient d'autres.
+Acquis avec les morceaux 10a et 10b : `f64`, la conversion avec `as` et `.round()`. En cours avec 10c : une struct qui en contient d'autres.
+
+L'aide-mémoire complet, avec les équivalents TypeScript, est dans `docs/guide.md`, section 16.
 
 Pas encore écrit par l'auteur : un `impl Trait for Type` (il en a lu dans les tests).
 

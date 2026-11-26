@@ -42,6 +42,7 @@ sgr-flight-linux (Rust) : logiciel de vol
 CLAUDE.md
 Cargo.toml                 # workspace Rust
 docs/
+  guide.md                 # guide du projet : vue d'ensemble expliquée, état, aide-mémoire
   conception.md            # conception détaillée et feuille de route
   icd.md                   # Interface Control Document
   decisions/               # décisions d'architecture (ADR courts)
