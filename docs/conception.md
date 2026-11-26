@@ -2,7 +2,7 @@
 
 ## Mission
 
-Le satellite Sagittarius-1 est largué par un lanceur sur une orbite d'injection à environ 400 km. Il traverse la LEOP (Launch and Early Orbit Phase), puis monte par ses propres moyens jusqu'à son orbite opérationnelle à environ 550 km.
+Sagittarius-1 est un CubeSat 6U : environ 10 × 20 × 30 cm, la taille d'une boîte à chaussures, pour 12 kg au plus. Il est largué par un lanceur sur une orbite d'injection à environ 400 km. Il traverse la LEOP (Launch and Early Orbit Phase), puis monte par ses propres moyens jusqu'à son orbite opérationnelle à environ 550 km.
 
 Scénario LEOP :
 
@@ -89,14 +89,19 @@ Protocole maison, défini en détail dans `docs/icd.md`.
 
 ## Propulsion
 
-Propulsion chimique monergol (hydrazine), réservoir en blowdown.
+Propulsion chimique à monergol vert, le LMP-103S, avec un réservoir en blowdown. Un monergol vert remplace l'hydrazine, toxique et difficile à faire accepter par un lanceur pour un passager secondaire comme un CubeSat.
+
+Le LMP-103S (à base d'ADN) est retenu plutôt que l'ASCENT (à base de HAN, ex-AF-M315E) pour deux raisons. Son propulseur de 1 N a volé en blowdown sur la mission PRISMA, avec des données publiques. Et il doit être réchauffé, ce qui donne de la matière au thermique et au FDIR, alors que l'ASCENT s'en passe.
+
+Les ordres de grandeur de cette section sont ceux du propulseur HPGP de 1 N de PRISMA. Le propulseur reste à fixer avec le dimensionnement.
 
 ### Modèle physique (`sgr-sim`)
 
 - Tsiolkovski : Δv = Isp · g₀ · ln(m₀ / m_f). La masse du satellite diminue à chaque allumage.
-- Blowdown : le gaz pressurisant se détend avec la consommation, la pression baisse et la poussée avec elle.
-- Thermique : l'hydrazine gèle vers 1,4 °C, donc réchauffeurs permanents sur le réservoir et les lignes. Le lit catalytique doit être préchauffé avant chaque allumage.
-- Dimensionnement à fixer (masse, poussée, Isp) : chaque allumage doit rester court devant la période orbitale (environ 92 min), sinon l'approximation impulsionnelle du transfert de Hohmann ne tient plus. Ordre de grandeur : 150 kg et 20 N donnent environ 5 min par allumage.
+- Blowdown : le gaz pressurisant se détend avec la consommation, la pression baisse et la poussée avec elle. Sur PRISMA, la pression d'alimentation va de 22 à 5,5 bar, et la poussée de 1 N à 0,27 N.
+- Thermique : le LMP-103S ne gèle que vers −90 °C, mais son sel (l'ADN) précipite en dessous de −7 °C, et sa plage normale de fonctionnement va de 10 à 50 °C. Des réchauffeurs gardent donc le réservoir et les lignes dans cette plage. Le lit catalytique doit être préchauffé à environ 350 °C avant chaque allumage, bien plus haut que pour l'hydrazine : une dizaine de watts, qui comptent dans le bilan d'énergie d'un CubeSat (valeur à vérifier sur la fiche du propulseur).
+- Dimensionnement à fixer (poussée, Isp, volume du réservoir) : chaque allumage doit rester court devant la période orbitale (environ 92 min), sinon l'approximation impulsionnelle du transfert de Hohmann ne tient plus. Ordre de grandeur : 12 kg et 1 N donnent environ 8 min par allumage, et les 85 m/s consomment environ 0,5 kg d'ergol (Isp de 220 s), soit 0,4 L.
+- La poussée de fin de blowdown compte autant que celle du début : à 0,27 N, le même allumage durerait une demi-heure. Le réservoir est à dimensionner pour que le second allumage garde une poussée suffisante.
 
 ### Logiciel de vol
 
@@ -112,7 +117,7 @@ Propulsion chimique monergol (hydrazine), réservoir en blowdown.
 - Propulseur qui ne s'allume pas.
 - Fuite : la pression baisse alors que tout est fermé.
 - Sous-performance.
-- Réchauffeur en panne : risque de gel des lignes.
+- Réchauffeur en panne : l'ergol des lignes sort de sa plage de température, jusqu'à précipiter.
 
 ## Segment sol (`ground/`)
 
@@ -158,5 +163,7 @@ Pistes pour la suite : vote à trois instances du logiciel de vol (à la manièr
 - Segment sol : OpenMCT (NASA), Yamcs.
 - Simulateurs opérationnels : SIMULUS (ESA/ESOC), auquel le centre de contrôle se connecte comme à une station sol.
 - Validation du simulateur : GMAT et 42 (NASA) comme références de calcul d'orbite.
+- CubeSat : CubeSat Design Specification, rév. 14.1 (Cal Poly), pour les dimensions, la masse et les règles à respecter après l'éjection.
+- Monergols verts : le LMP-103S et le propulseur HPGP de 1 N de la mission PRISMA (ECAPS) ; l'ASCENT de la mission GPIM (NASA) ; Lunar Flashlight (NASA), un CubeSat à ASCENT dont les propulseurs ont sous-performé, lignes d'ergol obstruées.
 - Normes : CCSDS 133.0-B (Space Packet Protocol) pour l'enveloppe ; ECSS-E-ST-70-41C (PUS-C) en cas d'évolution vers le PUS. Ses services 1 (vérification des requêtes), 11 (commandes temporisées) et 15 (stockage bord) inspirent déjà le protocole maison.
 - Tests : la crate `spacepackets` peut servir d'oracle pour vérifier l'encodage de l'en-tête CCSDS.
