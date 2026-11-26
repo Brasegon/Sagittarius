@@ -6,3 +6,22 @@
 //! lockstep frames.
 //!
 //! Shape of the simulator: `docs/decisions/0005-simulateur-minimal.md`.
+
+use crate::{equipment::pcdu::Pcdu, world::World};
+
+#[derive(Debug, Clone)]
+pub struct Sim {
+    pub world: World,
+    pub pcdu: Pcdu,
+    tick: u32
+}
+
+impl Sim {
+    pub fn new(world: World) -> Self {
+        Self { world, pcdu: Pcdu::new(), tick: 0 }
+    }
+
+    pub fn tick(&self) -> u32 {
+        self.tick
+    }
+}
