@@ -57,6 +57,9 @@ dependencies = [
 [[package]]
 name = "sgr-sim"
 version = "0.1.0"
+dependencies = [
+ "sgr-protocol",
+]
 
 [[package]]
 name = "stable_deref_trait"

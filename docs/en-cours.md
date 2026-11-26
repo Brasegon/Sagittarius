@@ -4,7 +4,7 @@
 
 ## Où on en est
 
-Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol sait jouer un cycle complet face à une fausse plateforme. Il lui manque le simulateur en face, puis le premier test de bout en bout.
+Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol sait jouer un cycle complet face à une fausse plateforme. Le simulateur a son squelette et ses tests : il reste à l'écrire, puis viendra le premier test de bout en bout.
 
 | Fait | Où |
 | ---- | -- |
@@ -22,8 +22,11 @@ Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans
 | Étape 9 : le trait `CycleSync`, puis `CycleReport` et `run_cycle`, 2 et 7 tests | `crates/sgr-flight-core/src/platform.rs`, `crates/sgr-flight/src/cycle.rs` et leurs tests |
 | La règle d'import de `sgr-protocol`, vérifiée par 3 tests | `crates/sgr-flight/tests/architecture.rs` |
 | La mission précisée : CubeSat 6U, monergol vert LMP-103S | `docs/conception.md` |
+| Décision 0005 : la forme du simulateur minimal | `docs/decisions/0005-simulateur-minimal.md` |
+| Squelette de `sgr-sim` : modules déclarés, en-têtes écrits, dépendance à `sgr-protocol` | `crates/sgr-sim/` |
+| Tests de l'étape 10 : 12 tests pour le monde, 10 pour le PCDU, 13 pour le simulateur | `crates/sgr-sim/tests/` |
 
-**Tout est au vert** : `cargo test --workspace`, `cargo lint`, `cargo fmt --all --check` et `cargo check-nostd`.
+**Les tests de l'étape 10 sont écrits, pas encore le code.** `cargo test --workspace` et `cargo lint` ne compilent donc pas : il manque `World`, `Pcdu` et `Sim`. Les autres crates restent au vert, à vérifier une par une (`cargo test -p sgr-flight`). Si ces tests sont commités avant le code, ce commit est rouge et la CI échoue dessus : c'est voulu.
 
 ## Reprendre sur une autre machine
 
@@ -35,25 +38,76 @@ cargo test --workspace
 
 Prérequis : `rustup` (la toolchain épinglée s'installe toute seule) et un compilateur C (`build-essential`). Node n'est pas nécessaire pour l'instant. Si `cargo` est introuvable dans un terminal, lancer `source "$HOME/.cargo/env"`.
 
-## Étape 10 : le PCDU côté simulateur
+## Étape 10 : ce qu'il faut écrire
 
-**La forme est proposée, pas encore décidée.** Elle se discute avec l'auteur avant d'écrire la décision 0005 et les tests.
+Les règles et leurs raisons sont dans la décision 0005. Les en-têtes des fichiers existent déjà, et `lib.rs` déclare les modules. Il y a trois morceaux, à écrire dans cet ordre. Chacun a son fichier de tests.
 
-La proposition tient en trois pièces dans `sgr-sim` :
+### 10a. Le monde, dans `crates/sgr-sim/src/world.rs`
 
-- **`World`** : l'état physique, en unités physiques et en `f64`. Pour commencer, la température de la batterie, avec un modèle thermique à un seul nœud. `step` l'avance de 100 ms.
-- **`Pcdu`** : l'équipement. Il garde l'état de ses interrupteurs et répond aux demandes du bus en mesurant le monde. C'est lui qui convertit une température en centièmes de degré.
-- **`Sim`** : il assemble les deux, aiguille une demande vers l'équipement dont c'est l'adresse et compte les ticks.
+- Cinq constantes publiques de type `f64`, avec les valeurs de la décision 0005 : `TICK_SECONDS`, `ENV_TEMP`, `BAT_HEAT_CAPACITY`, `BAT_THERMAL_RESISTANCE` et `BAT_HEATER_POWER`.
+- La struct publique `World`, avec deux champs publics de type `f64` : `bat_temp`, en degrés Celsius, et `bat_v`, en volts. Son `derive` : `Debug, Clone, Copy, PartialEq`.
+- La méthode publique `step(&mut self, heater_on: bool)`, qui avance la température de 100 ms avec la formule de la décision 0005.
 
-Les tests du logiciel de vol contiennent deux ébauches du modèle : `PcduModel` dans `tests/pcdu_driver.rs` et `FakePlatform` dans `tests/cycle.rs`.
+```
+cargo test -p sgr-sim --test world
+test result: ok. 12 passed; 0 failed
+```
 
-À trancher avec l'auteur :
+### 10b. Le PCDU, dans `crates/sgr-sim/src/equipment/pcdu.rs`
 
-- le découpage entre le monde et l'équipement ;
-- ce que couvre l'étape 10 : le `Pcdu` seul, ou aussi le modèle thermique ;
-- les valeurs du modèle thermique (capacité, fuite vers l'environnement, puissance du réchauffeur).
+- La struct publique `Pcdu`, avec un champ privé `switches: u8`. Même `derive` que `Thermostat`.
+- `new() -> Self` : tous les interrupteurs ouverts.
+- `heater_on(&self) -> bool` : l'état réel de l'interrupteur du réchauffeur.
+- `handle(&mut self, world: &World, request: &[u8]) -> Option<Payload>` : décode la demande et y répond.
+  - `GET_HK` : un `PcduHk` rempli avec les mesures du monde et l'état des interrupteurs, encodé.
+  - `SET_SWITCHES` : remplace l'état des interrupteurs, et répond par un `Payload` vide.
+  - Toute autre demande : `None`.
 
-À faire au passage dans `crates/sgr-sim/Cargo.toml` : ajouter la dépendance à `sgr-protocol`, et corriger le commentaire qui parle encore de l'interface « sensor / actuator » de l'ICD v0.1.
+```
+cargo test -p sgr-sim --test pcdu_model
+test result: ok. 10 passed; 0 failed
+```
+
+### 10c. Le simulateur, dans `crates/sgr-sim/src/sim.rs`
+
+- La struct publique `Sim` : deux champs publics, `world: World` et `pcdu: Pcdu`, et un champ privé `tick: u32`. Son `derive` : `Debug, Clone`.
+- `new(world: World) -> Self` : le monde donné, un PCDU neuf, le tick 0.
+- `tick(&self) -> u32` : le tick en cours.
+- `bus_request(&mut self, address: u8, request: &[u8]) -> Option<Payload>` : donne la demande au PCDU si c'est son adresse. Sinon, `None`.
+- `step(&mut self)` : avance le monde d'un pas, avec l'état du réchauffeur que donne le PCDU, puis passe au tick suivant.
+
+```
+cargo test -p sgr-sim --test sim
+test result: ok. 13 passed; 0 failed
+```
+
+### Ce qui est nouveau
+
+- **`f64`** : le nombre à virgule de Rust, l'équivalent du `number` de JavaScript. Un littéral s'écrit avec un point : `0.0`, pas `0`. Rust ne mélange jamais un entier et un flottant dans un calcul sans conversion explicite.
+- **Pas de `Eq` avec un flottant.** `derive(Eq)` est refusé sur une struct qui contient un `f64`. `PartialEq` suffit pour `assert_eq!`.
+- **Convertir avec `as`** : `x as i16` change un `f64` en entier. Il coupe les décimales, et sature aux bornes du type au lieu de reboucler. `x.round()` arrondit d'abord au plus proche.
+- **Une struct qui en contient d'autres**, et **deux champs empruntés à la fois** : dans `bus_request`, `self.pcdu.handle(&self.world, request)` modifie un champ en lisant l'autre. Le compilateur l'accepte parce que ce sont deux champs distincts.
+- **`match` sur une constante** : `PCDU_ADDRESS => ...` compare avec la valeur de la constante, et `_ => ...` prend tout le reste.
+
+### Les pièges
+
+- **Couper au lieu d'arrondir.** `0.29 * 100.0` vaut `28.999999999999996` : sans `round`, la mesure part à 28 au lieu de 29. Le test `measures_are_rounded_to_the_nearest_step` le détecte.
+- **Les bits réservés.** L'ICD demande de les ignorer à la réception : le PCDU ne garde que les interrupteurs qui existent. Le test `reserved_bits_are_ignored` le détecte.
+- **`new()` sans `Default`.** `cargo lint` refuse une struct qui a un `new()` sans argument et pas de `Default` (`clippy::new_without_default`). C'est pour cela que `Pcdu` reprend le `derive` de `Thermostat`.
+- **Avancer le monde pendant le cycle.** Une demande sur le bus ne doit ni toucher à la température ni au tick. Les tests `world_does_not_move_during_the_cycle` et `bus_request_does_not_move_the_tick` le détectent.
+
+### Résultat attendu
+
+```
+cargo test -p sgr-sim
+test result: ok. 10 passed; 0 failed     <- tests/pcdu_model.rs
+test result: ok. 13 passed; 0 failed     <- tests/sim.rs
+test result: ok. 12 passed; 0 failed     <- tests/world.rs
+```
+
+Puis `cargo fmt --all`, `cargo lint` et `cargo check-nostd`, qui doivent passer tous les trois. À vérifier avant de demander la relecture.
+
+Un avertissement attendu en chemin : tant que `pcdu.rs` n'importe pas `sgr_protocol`, Cargo affiche `warning: unused dependency sgr-protocol`. Il disparaît avec le morceau 10b.
 
 ## Ensuite
 
@@ -93,6 +147,8 @@ Pour doser les explications : celles-ci sont acquises, les autres sont à prése
 - Une struct qui garde un état, modifié par une méthode `&mut self` ; écrire un test (`#[test]`, `assert!`, `assert_eq!`).
 - Deux traits dans une borne (`P: A + B`) ; `pub use` ; `if let`, que l'auteur a trouvé seul.
 - Importer un module (`use a::b;`, puis `b::X`) ou ses noms (`use a::b::{X, Y};`), l'équivalent de `import * as b` et de `import { X, Y }`.
+
+En cours avec l'étape 10 : `f64`, la conversion avec `as`, une struct qui en contient d'autres.
 
 Pas encore écrit par l'auteur : un `impl Trait for Type` (il en a lu dans les tests).
 

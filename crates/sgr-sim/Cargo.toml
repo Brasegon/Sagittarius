@@ -7,9 +7,9 @@ license.workspace = true
 publish.workspace = true
 
 # Allowed workspace dependencies: sgr-protocol. Never the flight crates:
-# the simulator only knows the sensor / actuator interface.
-# Add `sgr-protocol.workspace = true` when first needed (Cargo warns about unused dependencies).
+# the simulator only knows the equipment bus and the formats of each equipment.
 [dependencies]
+sgr-protocol.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"
