@@ -17,6 +17,26 @@ pub trait Clock {
     fn tick(&self) -> u32;
 }
 
+/// Cadence of the cycle: when a cycle starts, and how the flight software says it is over.
+///
+/// In lockstep, these are the `Tick` and `CycleDone` frames exchanged with the simulator. On the
+/// target, `wait_tick` will wait for a hardware timer.
+///
+/// Rules of the cycle: `docs/decisions/0004-boucle-minimale.md`.
+pub trait CycleSync {
+    /// Waits for the start of the next cycle.
+    ///
+    /// It returns nothing: the tick has a single source, [`Clock::tick`], which gives the number
+    /// of the cycle that has just started.
+    fn wait_tick(&mut self);
+
+    /// Tells the platform that the flight software has finished its cycle.
+    ///
+    /// To be called once per cycle, whatever happened during it: in lockstep, the simulator
+    /// waits for it before it moves the world forward.
+    fn cycle_done(&mut self);
+}
+
 /// Why an exchange on the equipment bus failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BusError {

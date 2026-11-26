@@ -1,10 +1,10 @@
-# Travail en cours : étape 9, le trait de cadence et le cycle
+# Travail en cours : étape 10, le PCDU côté simulateur
 
 > **Note temporaire.** Elle sert à reprendre le travail sur une autre machine. Avant de fusionner la branche : supprimer ce fichier et la ligne de `CLAUDE.md` qui y renvoie (section « Avancement »).
 
 ## Où on en est
 
-Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol a ses traits de plateforme, son premier pilote et son thermostat : il lui manque de quoi jouer un cycle.
+Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans `sgr-protocol`. Le logiciel de vol sait jouer un cycle complet face à une fausse plateforme. Il lui manque le simulateur en face, puis le premier test de bout en bout.
 
 | Fait | Où |
 | ---- | -- |
@@ -19,9 +19,11 @@ Branche `claude/icd-v0-lockstep`. Phase 1. Le protocole du bus est terminé dans
 | Étape 7 : le pilote du PCDU (`read_hk`, `set_switches`) et `DriverError`, 10 tests | `crates/sgr-flight/src/drivers/` et `tests/pcdu_driver.rs` |
 | Étape 8 : le thermostat du réchauffeur de la batterie (`Thermostat`), 11 tests | `crates/sgr-flight/src/thermal.rs` et `tests/thermal.rs` |
 | Décision 0004 : la boucle minimale | `docs/decisions/0004-boucle-minimale.md` |
-| Tests de l'étape 9 : 2 tests ajoutés pour le trait, 7 tests pour le cycle | `crates/sgr-flight-core/tests/platform.rs` et `crates/sgr-flight/tests/cycle.rs` |
+| Étape 9 : le trait `CycleSync`, puis `CycleReport` et `run_cycle`, 2 et 7 tests | `crates/sgr-flight-core/src/platform.rs`, `crates/sgr-flight/src/cycle.rs` et leurs tests |
+| La règle d'import de `sgr-protocol`, vérifiée par 3 tests | `crates/sgr-flight/tests/architecture.rs` |
+| La mission précisée : CubeSat 6U, monergol vert LMP-103S | `docs/conception.md` |
 
-**Les tests de l'étape 9 sont écrits, pas encore le code.** `cargo test -p sgr-flight-core` et `cargo test -p sgr-flight` ne compilent donc pas : il manque `CycleSync`, `CycleReport`, `run_cycle` et deux réexports dans le pilote. `sgr-protocol` reste au vert. Si ces tests sont commités avant le code, ce commit est rouge et la CI échoue dessus : c'est voulu.
+**Tout est au vert** : `cargo test --workspace`, `cargo lint`, `cargo fmt --all --check` et `cargo check-nostd`.
 
 ## Reprendre sur une autre machine
 
@@ -33,74 +35,38 @@ cargo test --workspace
 
 Prérequis : `rustup` (la toolchain épinglée s'installe toute seule) et un compilateur C (`build-essential`). Node n'est pas nécessaire pour l'instant. Si `cargo` est introuvable dans un terminal, lancer `source "$HOME/.cargo/env"`.
 
-## Étape 9 : ce qu'il faut écrire
+## Étape 10 : le PCDU côté simulateur
 
-Les règles et leurs raisons sont dans la décision 0004. Il y a trois endroits à toucher.
+**La forme est proposée, pas encore décidée.** Elle se discute avec l'auteur avant d'écrire la décision 0005 et les tests.
 
-**1. Dans `crates/sgr-flight-core/src/platform.rs`** : le trait public `CycleSync`, avec deux méthodes.
+La proposition tient en trois pièces dans `sgr-sim` :
 
-```rust
-fn wait_tick(&mut self);
-fn cycle_done(&mut self);
-```
+- **`World`** : l'état physique, en unités physiques et en `f64`. Pour commencer, la température de la batterie, avec un modèle thermique à un seul nœud. `step` l'avance de 100 ms.
+- **`Pcdu`** : l'équipement. Il garde l'état de ses interrupteurs et répond aux demandes du bus en mesurant le monde. C'est lui qui convertit une température en centièmes de degré.
+- **`Sim`** : il assemble les deux, aiguille une demande vers l'équipement dont c'est l'adresse et compte les ticks.
 
-**2. Dans `crates/sgr-flight/src/drivers/pcdu.rs`** : réexporter `PcduHk` et `SWITCH_BAT_HEATER`, pour que le code au-dessus du pilote n'ait pas à importer `sgr-protocol`. Un réexport s'écrit `pub use` à la place de `use`. C'est l'équivalent de `export { X } from "./y"` en TypeScript.
+Les tests du logiciel de vol contiennent deux ébauches du modèle : `PcduModel` dans `tests/pcdu_driver.rs` et `FakePlatform` dans `tests/cycle.rs`.
 
-**3. Dans `crates/sgr-flight/src/cycle.rs`**, dont l'en-tête existe déjà :
+À trancher avec l'auteur :
 
-- La struct publique `CycleReport`, avec deux champs publics : `acquisition`, un `Result<PcduHk, DriverError>`, et `command`, un `Result<(), DriverError>`. Même `derive` que `DriverError`.
-- La fonction publique `run_cycle` :
+- le découpage entre le monde et l'équipement ;
+- ce que couvre l'étape 10 : le `Pcdu` seul, ou aussi le modèle thermique ;
+- les valeurs du modèle thermique (capacité, fuite vers l'environnement, puissance du réchauffeur).
 
-```rust
-pub fn run_cycle<P: CycleSync + EquipmentBus>(
-    platform: &mut P,
-    thermostat: &mut Thermostat,
-) -> CycleReport
-```
-
-Ce qu'elle fait, dans l'ordre :
-
-1. Attendre le tick.
-2. Lire le housekeeping du PCDU, avec le pilote.
-3. Si la lecture a réussi, donner `bat_temp` au thermostat. Sinon, ne pas y toucher.
-4. Envoyer l'état des interrupteurs, avec le pilote : `SWITCH_BAT_HEATER` si le thermostat veut chauffer, `0` sinon. À chaque cycle, même si la lecture a échoué.
-5. Signaler la fin du cycle.
-6. Renvoyer les deux résultats dans un `CycleReport`.
-
-### Ce qui est nouveau
-
-- **`P: CycleSync + EquipmentBus`** : le `+` demande un type qui implémente les deux traits. Une seule plateforme donne la cadence et le bus, parce qu'en lockstep une seule socket transporte tout.
-- **Prêter la plateforme au pilote** : `platform` est déjà un `&mut P`, on le passe tel quel à `read_hk` et à `set_switches`. Le prêt se termine au retour de chaque appel.
-- **Garder un `Result` au lieu de le traiter tout de suite** : ici, les deux `Result` sont rangés dans le rapport, erreur ou non.
-
-### Le piège : `?` arrête le cycle
-
-`let hk = pcdu::read_hk(platform)?;` est l'écriture qui vient naturellement. Mais `?` fait sortir la fonction dès la première erreur : le cycle s'arrêterait avant `cycle_done`, et le simulateur attendrait pour toujours. Le test `cycle_ends_even_when_the_pcdu_is_silent` le détecte. De toute façon, `?` ne compilerait pas ici, puisque `run_cycle` ne renvoie pas un `Result`.
-
-### Résultat attendu
-
-```
-cargo test -p sgr-flight-core
-test result: ok. 9 passed; 0 failed      <- tests/platform.rs
-
-cargo test -p sgr-flight
-test result: ok. 7 passed; 0 failed      <- tests/cycle.rs
-test result: ok. 10 passed; 0 failed     <- tests/pcdu_driver.rs
-test result: ok. 11 passed; 0 failed     <- tests/thermal.rs
-```
-
-Puis `cargo fmt --all`, `cargo lint` et `cargo check-nostd`, qui doivent passer tous les trois. À vérifier avant de demander la relecture.
+À faire au passage dans `crates/sgr-sim/Cargo.toml` : ajouter la dépendance à `sgr-protocol`, et corriger le commentaire qui parle encore de l'interface « sensor / actuator » de l'ICD v0.1.
 
 ## Ensuite
 
-Il reste deux morceaux avant la fin de la base.
+**Étape 11 : le premier test de bout en bout dans `sgr-e2e`**, le simulateur et le logiciel de vol dans un seul processus. L'auteur y écrira son premier `impl Trait for Type`, pour brancher la plateforme sur le simulateur. C'est la fin de la base : ensuite, il conçoit et écrit seul.
 
-1. **Le modèle du PCDU dans `sgr-sim`.** Les tests en contiennent deux ébauches : `PcduModel` dans `tests/pcdu_driver.rs` et `FakePlatform` dans `tests/cycle.rs`.
-2. **Le premier test de bout en bout dans `sgr-e2e`** : le simulateur et le logiciel de vol dans un seul processus. L'auteur y écrira son premier `impl Trait for Type`, pour brancher la plateforme sur le simulateur. C'est la fin de la base : ensuite, il conçoit et écrit seul.
+**À décider avant d'écrire l'ordonnanceur**, chacune par une décision :
+
+- **La liaison radio.** `CLAUDE.md` et `docs/conception.md` font de `GroundLink` un trait de plateforme, alors que la décision 0001 et l'ICD penchent pour un équipement émetteur-récepteur sur le bus. Piste proposée par Claude, pas encore validée par l'auteur : l'équipement sur le bus, pratique normale sur un CubeSat, et un service TC/TM sans entrée-sortie, à qui le cycle donne les octets reçus et prend les octets à émettre.
+- **Les trois questions ouvertes de `docs/conception.md`**, qui se décident ensemble. Pistes proposées, pas encore validées : une table de données pour les mesures, une table d'états voulus pour les commandes aux équipements, appliquée en fin de cycle avec les inhibitions du FDIR, et un bus interne lu au cycle suivant.
 
 Deux améliorations possibles, laissées à l'auteur :
 
-- `set_switches` donne au bus un buffer de `PcduHk::LEN` octets, alors que la réponse attendue est vide. Un buffer vide (`&mut []`) dirait mieux l'intention.
+- `set_switches` donne au bus un buffer de `PcduHk::LEN` octets, alors que la réponse attendue est vide. Un buffer vide (`&mut []`) dirait mieux l'intention. Ce sera nécessaire en I²C, où c'est la taille du buffer qui fixe le nombre d'octets lus.
 - Les seuils `500` et `1000` du thermostat sont écrits en dur. Deux constantes nommées diraient ce qu'ils valent et dans quelle unité.
 
 ## Rappels
@@ -109,7 +75,7 @@ Deux améliorations possibles, laissées à l'auteur :
 - **Un échange avec le PCDU** : le pilote envoie un `PcduRequest` encodé. `GET_HK` reçoit un `PcduHk`, `SET_SWITCHES` une réponse vide.
 - **Une réponse vide n'est pas un silence** : `transfer` renvoie `Ok(0)` dans le premier cas, `Err(BusError::NoResponse)` dans le second.
 - **Bus d'équipements et bus interne** sont deux choses. Le premier relie l'ordinateur de bord à ses équipements : seuls les pilotes y parlent. Le second relie les sous-systèmes entre eux, à l'intérieur du logiciel de vol.
-- **Seuls les pilotes utilisent `sgr-protocol`** dans `sgr-flight`, et seulement son module `equipment`.
+- **Seuls les pilotes utilisent `sgr-protocol`** dans `sgr-flight`, et seulement son module `equipment`. Un test le vérifie : `tests/architecture.rs`. Le code au-dessus des pilotes importe ces types depuis le pilote, qui les réexporte.
 - **Une longueur qui vient de l'extérieur se vérifie avant de servir** : `&buffer[..length]` panique si `length` dépasse le buffer.
 - **Les températures sont en centièmes de degré** : 500 vaut +5,00 °C, 12000 vaut 120 °C.
 
@@ -125,8 +91,8 @@ Pour doser les explications : celles-ci sont acquises, les autres sont à prése
 - `heapless::Vec` à travers l'alias `Payload` : `from_array`, `from_slice`.
 - Déclarer un trait ; écrire une fonction générique sur un trait (`<B: EquipmentBus>`) ; `todo!()`.
 - Une struct qui garde un état, modifié par une méthode `&mut self` ; écrire un test (`#[test]`, `assert!`, `assert_eq!`).
-
-En cours avec l'étape 9 : deux traits dans une borne (`P: A + B`), `pub use`.
+- Deux traits dans une borne (`P: A + B`) ; `pub use` ; `if let`, que l'auteur a trouvé seul.
+- Importer un module (`use a::b;`, puis `b::X`) ou ses noms (`use a::b::{X, Y};`), l'équivalent de `import * as b` et de `import { X, Y }`.
 
 Pas encore écrit par l'auteur : un `impl Trait for Type` (il en a lu dans les tests).
 

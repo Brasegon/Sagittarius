@@ -33,7 +33,7 @@ Ce qu'on y gagne :
 Ce que ça coûte :
 
 - `DriverError` ne garde pas le détail de l'erreur du bus. `ResponseTooLong` et une réponse trop courte donnent le même `InvalidResponse`.
-- La règle « seuls les pilotes utilisent `sgr-protocol` » n'est pas vérifiée par le compilateur : c'est une convention, à tenir en relecture.
+- La règle « seuls les pilotes utilisent `sgr-protocol` » n'est pas vérifiée par le compilateur. Depuis le 2026-11-26, un test la vérifie à sa place : `crates/sgr-flight/tests/architecture.rs`.
 
 Les écarts avec un vrai satellite :
 

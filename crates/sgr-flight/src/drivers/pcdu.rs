@@ -4,8 +4,8 @@
 //! exchange on the bus: it never retries by itself.
 
 use sgr_flight_core::platform::{BusError, EquipmentBus};
-use sgr_protocol::equipment::pcdu::PcduHk;
 use sgr_protocol::equipment::pcdu::{self, PcduRequest};
+pub use sgr_protocol::equipment::pcdu::{PcduHk, SWITCH_BAT_HEATER};
 
 use crate::drivers::DriverError;
 
